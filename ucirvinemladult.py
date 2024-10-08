@@ -124,7 +124,8 @@ if __name__ == '__main__':
 
         start = time.time()
         model = multiclass.OneVsRestClassifier(LogisticRegression())
-        scaler= StandardScaler(with_mean=False) # Cannot center sparse matrices: pass `with_mean=False` instead. See docstring for motivation and alternatives.
+        scaler = StandardScaler(
+            with_mean=False)  # Cannot center sparse matrices: pass `with_mean=False` instead. See docstring for motivation and alternatives.
         pipe = make_pipeline(scaler, model)
         if key == 'Scipy sparse matrix':
             y = y_train.toarray().ravel()
@@ -138,9 +139,10 @@ if __name__ == '__main__':
         print("Training: " + str(duration) + " secs")
         print("\n")
 
-        #plot confusion matrix
+        # plot confusion matrix
         from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
         import matplotlib.pyplot as plt
+
         start = time.time()
         y_pred = pipe.predict(X_test)
         if key == 'Scipy sparse matrix':
@@ -157,9 +159,9 @@ if __name__ == '__main__':
         plt.show()
         print("\n")
 
-
-        #plot ROC curve
+        # plot ROC curve
         from sklearn.metrics import RocCurveDisplay, roc_curve
+
         start = time.time()
         y_score = pipe.decision_function(X_test)
         if key == 'Scipy sparse matrix':
@@ -176,8 +178,9 @@ if __name__ == '__main__':
         plt.show()
         print("\n")
 
-        #plot precision recall curve
+        # plot precision recall curve
         from sklearn.metrics import precision_recall_curve, PrecisionRecallDisplay
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             precision, recall, _ = precision_recall_curve(y_test.toarray().ravel(), y_score)
@@ -193,8 +196,9 @@ if __name__ == '__main__':
         plt.show()
         print("\n")
 
-        #plot classification report
+        # plot classification report
         from sklearn.metrics import classification_report
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print(classification_report(y_test.toarray().ravel(), y_pred))
@@ -207,8 +211,9 @@ if __name__ == '__main__':
         print("Classification report: " + str(duration) + " secs")
         print("\n")
 
-        #plot log loss
+        # plot log loss
         from sklearn.metrics import log_loss
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Log loss: ", log_loss(y_test.toarray().ravel(), y_pred))
@@ -221,8 +226,9 @@ if __name__ == '__main__':
         print("Log loss: " + str(duration) + " secs")
         print("\n")
 
-        #plot accuracy score
+        # plot accuracy score
         from sklearn.metrics import accuracy_score
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Accuracy score: ", accuracy_score(y_test.toarray().ravel(), y_pred))
@@ -235,8 +241,9 @@ if __name__ == '__main__':
         print("Accuracy score: " + str(duration) + " secs")
         print("\n")
 
-        #plot f1 score
+        # plot f1 score
         from sklearn.metrics import f1_score
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("F1 score: ", f1_score(y_test.toarray().ravel(), y_pred))
@@ -249,8 +256,9 @@ if __name__ == '__main__':
         print("F1 score: " + str(duration) + " secs")
         print("\n")
 
-        #plot balanced accuracy score
+        # plot balanced accuracy score
         from sklearn.metrics import balanced_accuracy_score
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Balanced accuracy score: ", balanced_accuracy_score(y_test.toarray().ravel(), y_pred))
@@ -263,8 +271,9 @@ if __name__ == '__main__':
         print("Balanced accuracy score: " + str(duration) + " secs")
         print("\n")
 
-        #plot cohen kappa score
+        # plot cohen kappa score
         from sklearn.metrics import cohen_kappa_score
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Cohen kappa score: ", cohen_kappa_score(y_test.toarray().ravel(), y_pred))
@@ -277,8 +286,9 @@ if __name__ == '__main__':
         print("Cohen kappa score: " + str(duration) + " secs")
         print("\n")
 
-        #plot matthews correlation coefficient
+        # plot matthews correlation coefficient
         from sklearn.metrics import matthews_corrcoef
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Matthews correlation coefficient: ", matthews_corrcoef(y_test.toarray().ravel(), y_pred))
@@ -291,8 +301,9 @@ if __name__ == '__main__':
         print("Matthews correlation coefficient: " + str(duration) + " secs")
         print("\n")
 
-        #plot roc auc score
+        # plot roc auc score
         from sklearn.metrics import roc_auc_score
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("ROC AUC score: ", roc_auc_score(y_test.toarray().ravel(), y_pred))
@@ -305,8 +316,9 @@ if __name__ == '__main__':
         print("ROC AUC score: " + str(duration) + " secs")
         print("\n")
 
-        #plot precision score
+        # plot precision score
         from sklearn.metrics import precision_score
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Precision score: ", precision_score(y_test.toarray().ravel(), y_pred))
@@ -319,8 +331,9 @@ if __name__ == '__main__':
         print("Precision score: " + str(duration) + " secs")
         print("\n")
 
-        #plot recall score
+        # plot recall score
         from sklearn.metrics import recall_score
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Recall score: ", recall_score(y_test.toarray().ravel(), y_pred))
@@ -333,8 +346,9 @@ if __name__ == '__main__':
         print("Recall score: " + str(duration) + " secs")
         print("\n")
 
-        #plot jaccard score
+        # plot jaccard score
         from sklearn.metrics import jaccard_score
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Jaccard score: ", jaccard_score(y_test.toarray().ravel(), y_pred))
@@ -347,8 +361,9 @@ if __name__ == '__main__':
         print("Jaccard score: " + str(duration) + " secs")
         print("\n")
 
-        #plot hamming loss
+        # plot hamming loss
         from sklearn.metrics import hamming_loss
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Hamming loss: ", hamming_loss(y_test.toarray().ravel(), y_pred))
@@ -361,8 +376,9 @@ if __name__ == '__main__':
         print("Hamming loss: " + str(duration) + " secs")
         print("\n")
 
-        #plot zero one loss
+        # plot zero one loss
         from sklearn.metrics import zero_one_loss
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Zero one loss: ", zero_one_loss(y_test.toarray().ravel(), y_pred))
@@ -375,8 +391,9 @@ if __name__ == '__main__':
         print("Zero one loss: " + str(duration) + " secs")
         print("\n")
 
-        #plot brier score loss
+        # plot brier score loss
         from sklearn.metrics import brier_score_loss
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Brier score loss: ", brier_score_loss(y_test.toarray().ravel(), y_pred))
@@ -389,8 +406,9 @@ if __name__ == '__main__':
         print("Brier score loss: " + str(duration) + " secs")
         print("\n")
 
-        #plot hinge loss
+        # plot hinge loss
         from sklearn.metrics import hinge_loss
+
         start = time.time()
         if key == 'Scipy sparse matrix':
             print("Hinge loss: ", hinge_loss(y_test.toarray().ravel(), y_pred))
@@ -402,7 +420,3 @@ if __name__ == '__main__':
         duration = round(end - start, 2)
         print("Hinge loss: " + str(duration) + " secs")
         print("\n")
-
-
-
-
