@@ -1,6 +1,7 @@
 import os
 import time
 
+import numpy as np
 import pandas as pd
 from sklearn import multiclass
 from sklearn.linear_model import LogisticRegression
@@ -147,6 +148,25 @@ def select_correlation_features(df_full_data):
     g.get_figure().savefig('correlation_heatmap.png')
 
 
+def get_class_weights(df_classes):
+    """
+    Implementing class weights
+    If the positive and negative cases in the dataset are imbalanced
+    (e.g., there are significantly more negative cases than positive cases),
+    then the model may be biased towards the more prevalent class.
+    Implementing class weights (i.e., giving more weight to the minority class) can
+    help balance the precision and recall of the model.
+    :param df_classes: must be a pandas data frame that has the target column as the last column
+    :return:
+    """
+    from sklearn.utils import class_weight
+    Y = df_classes.iloc[:, df_classes.shape[1] - 1]
+    class_weights = class_weight.compute_class_weight('balanced', classes=np.unique(Y), y=Y)
+    #convert Class weights to dictionary
+    class_weights = dict(enumerate(class_weights))
+    print("Class weights: ", class_weights)
+    return class_weights
+
 
 # python main entry
 if __name__ == '__main__':
@@ -227,8 +247,6 @@ if __name__ == '__main__':
         vector_dict[f'Important features {len(spec_column)} {spec_column}'] = [X_Data_one_hot_encoded[spec_column],
                                                                                Y_Data]
 
-    select_correlation_features(numeric_df, top_range)
-
     # check for Y_Data imbalance
     print("Y_Data value counts: ", Y_Data.value_counts())
     print("Y_Data sparse one hot encoded value counts: ", Y_Data_sparse_one_hot_encoded.value_counts())
@@ -238,7 +256,8 @@ if __name__ == '__main__':
     minority_class = Y_Data.value_counts().min()
     imbalance_threshold = 0.2
     imbalance_threshold_data_count = imbalance_threshold * Y_Data.shape[0]
-    if minority_class < imbalance_threshold_data_count:
+    imbalance_detected =  minority_class < imbalance_threshold_data_count
+    if imbalance_detected:
         print(f"Data is imbalanced because minority class count {minority_class} < {imbalance_threshold_data_count}  "
               f"is less than {imbalance_threshold * 100}% of the total data {Y_Data.shape[0]}")
     else:
@@ -258,12 +277,21 @@ if __name__ == '__main__':
         #        print("Train-test split: " + str(duration) + " secs")
 
         start = time.time()
-        model = multiclass.OneVsRestClassifier(LogisticRegression())
+        if imbalance_detected:
+            class_weights = get_class_weights(item[1])
+            logist_reg = LogisticRegression(class_weight=class_weights)
+        else:
+            logist_reg = LogisticRegression()
+        # create a multi-class classifier one vs rest logistic regression with class weights
+        model = multiclass.OneVsRestClassifier(logist_reg)
         scaler = StandardScaler(
             with_mean=False)  # Cannot center sparse matrices: pass `with_mean=False` instead. See docstring for motivation and alternatives.
         pipe = make_pipeline(scaler, model)
+
+
         if key == 'Scipy sparse matrix':
             y = y_train.toarray().ravel()
+            # add classweights
             pipe.fit(X_train, y)
         elif key == 'Sparse pandas dataframe':
             pipe.fit(X_train.values, y_train.values.ravel())
