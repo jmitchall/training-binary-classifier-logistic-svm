@@ -10,15 +10,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-http_proxy = 'http://http.proxy.fmr.com:8000/'
-https_proxy = 'http://http.proxy.fmr.com:8000/'
-no_proxy = '169.254.169.254'
-os.environ['http_proxy'] = http_proxy
-os.environ['https_proxy'] = https_proxy
-os.environ['no_proxy'] = no_proxy
-os.environ['HTTP_PROXY'] = http_proxy
-os.environ['HTTPS_PROXY'] = https_proxy
-
 
 def get_memory_usage_of_data_frame(df, bytes_to_mb_div=0.000001):
     mem = round(df.memory_usage().sum() * bytes_to_mb_div, 3)
