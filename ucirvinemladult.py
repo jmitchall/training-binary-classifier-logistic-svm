@@ -1,12 +1,13 @@
 import numpy as np
 import pandas as pd
+from scipy import sparse
 from sklearn import multiclass
+from sklearn.decomposition import PCA
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from scipy import sparse
+from sklearn.svm import SVC
 
 
 def get_memory_usage_of_data_frame(df, bytes_to_mb_div=0.000001):
@@ -158,32 +159,30 @@ def get_class_weights(df_classes):
 ONE_HOT_MISSING_VALUE = 0.0
 
 
-def get_logistic_regression_model(imbalanced, class_data, max_iterations=100):
+def get_svc_model(imbalanced, class_data, inverse_of_regularization_strength=1.0,kernel_type='rbf', gamma='scale'):
     """
-    Create a logistic regression model with or without class weights based on balance
+    The fit time scales at least quadratically with the number of samples and may be impractical beyond tens of
+    thousands of samples. For large datasets consider using LinearSVC or SGDClassifier instead,
+    possibly after a Nystroem transformer or other Kernel Approximation.
+
+    The multiclass support is handled according to a one-vs-one scheme.
+
+    For details on the precise mathematical formulation of the provided kernel functions and how gamma,
+    coef0 and degree affect each other, see the corresponding section in the narrative documentation:
+    https://scikit-learn.org/dev/modules/svm.html#svm-kernels
+    https://scikit-learn.org/dev/auto_examples/model_selection/plot_nested_cross_validation_iris.html#sphx-glr-auto-examples-model-selection-plot-nested-cross-validation-iris-py
     :param imbalanced:
     :param class_data:
-    :param max_iterations:
-    :return: multiclass.OneVsRestClassifier
+    :param inverse_of_regularization_strength:
+    :param kernel_type:
+    :param gamma:
+    :return:
     """
-    # create a multi-class classifier one vs rest logistic regression with or without class weights based on balance
-    # lbfgs stand for: "Limited-memory Broyden–Fletcher–Goldfarb–Shanno Algorithm".
-    # It is one of the solvers' algorithms provided by Scikit-Learn Library.
-    #
-    # The term limited-memory simply means it stores only a few vectors that represent the
-    # gradients approximation implicitly.
-    #
-    # It has better convergence on relatively small datasets.
-    # Scikit-Learn API sometimes provides the user the option to specify the maximum number of
-    # iterations the algorithm should take while it's searching for the solution in an iterative manner:
-    # LogisticRegression(... solver='lbfgs', max_iter=100 ...)
-    # As you can see, the default solver in LogisticRegression is 'lbfgs' and
-    # the maximum number of iterations is 100 by default.
     if imbalanced:
         class_weights = get_class_weights(class_data)
-        return_value = LogisticRegression(class_weight=class_weights, max_iter=max_iterations)
+        return_value = SVC(C=inverse_of_regularization_strength, class_weight=class_weights, kernel=kernel_type, gamma=gamma)
     else:
-        return_value = LogisticRegression(max_iter=max_iterations)
+        return_value = SVC(C=inverse_of_regularization_strength , kernel=kernel_type, gamma=gamma)
     return multiclass.OneVsRestClassifier(return_value)
 
 
@@ -626,7 +625,17 @@ def get_numeric_data_with_labels(x_data_1_hot_encoded, y_data_labels):
     return numeric_data
 
 
-def assign_x_y_model_list_to_dict(model_map, model_key, x_data, y_data, model_predictor):
+def get_standard_scaler(x_data):
+    # Standardize features by removing the mean and scaling to unit variance
+    # Cannot center sparse matrices: pass `with_mean=False` instead.
+    if is_sparse_dataframe(x_data):
+        return StandardScaler(with_mean=False)
+    else:
+        return StandardScaler()
+
+
+def assign_x_y_pipe_to_dict(model_map, model_key, x_data, y_data, model_predictor,
+                            with_pca_components=None, scaler=None):
     simple_imputer = None
     # Set a Flag if the data has null values
     if x_data.isnull().values.any():
@@ -635,7 +644,126 @@ def assign_x_y_model_list_to_dict(model_map, model_key, x_data, y_data, model_pr
         print("Data has null values assuming one hot encoding, impute with missing value: ", missing_value)
     else:
         print("Data has no null values")
-    model_map[model_key] = [x_data, y_data, model_predictor, simple_imputer]
+
+    steps = []
+    if not scaler:
+        scaler = get_standard_scaler(x_data)
+    steps.append(scaler)
+
+    if with_pca_components:
+        steps.append(with_pca_components)
+
+    if simple_imputer:
+        steps.insert(0, simple_imputer)
+    steps.append(model_predictor)
+    pipe = make_pipeline(*steps)
+    model_map[model_key] = [x_data, y_data, pipe]
+
+
+def get_range_svc_C(ten_to_minimum_exponent=-4, ten_to_max_exponent=4, num_values=5):
+    """
+    This function generates a range of values for the regularization strength parameter 'C' in Logistic Regression.
+    A high value of C (e.g. C=1.0) "Trust this training data a lot" tells the model to give high weight to the
+    training data, and
+    a low value (e.g. C=0.01) tells the model to give more weight to this complexity penalty preventing
+    overfitting to the training data.
+    "This data may not be fully representative of the real world data, so if it's telling you to
+    make a parameter really large, don't listen to it".
+    C: float, default=1.0 Inverse of regularization strength; must be a positive float.
+    Like in support vector machines, smaller values specify stronger regularization.
+    Regularization generally refers the concept that there should be a complexity penalty for more extreme parameters.
+
+    :param ten_to_minimum_exponent:
+    :param ten_to_max_exponent:
+    :param num_values:
+    :return: a list of floats containing the regularization strength values
+    """
+    # The np.logspace function creates a sequence of numbers that are evenly spaced on a logarithmic scale.
+    # np.logspace generates numbers spaced evenly on a log scale.
+    # In this case, it generates 50 values ranging from ( 10^{ten_to_minimum_exponent} ) to ( 10^{ten_to_max_exponent} ).
+    # This array is used to explore different regularization strengths during model training.
+    return np.logspace(ten_to_minimum_exponent, ten_to_max_exponent, num_values)
+
+
+def get_range_svc_kernel():
+    """
+    This function generates a range of values for the kernel parameter in Support Vector Classifier.
+    The kernel parameter specifies the kernel type to be used in the algorithm.
+    The kernel function transforms the input data into the required form.
+    :return: a list of strings containing the kernel values
+    """
+    return ['linear', 'poly', 'rbf', 'sigmoid']
+
+
+def get_range_PCA_components(training_data):
+    """
+    Principal Component Analysis requires a parameter 'n_components' to be optimised.
+    'pca_n_components' signifies the number of components to keep after reducing the dimension.
+    The number of components to keep is a hyperparameter that can be tuned to improve the model's performance.
+
+     :param training_data: The training data to be used for PCA
+     :return: a list of integers starting from 1 up to the number of columns in the training_data DataFrame
+    """
+    return list(range(1, training_data.shape[1] + 1, 1))
+
+
+def find_pipe_with_best_hyper_parameters_grid_search_cross_validation(x_numeric_df, y_data_labels,
+                                                                      cross_validation_folds=5, cpu_cores=-1):
+    """
+    This function finds the best hyperparameters for the model using GridSearchCV.
+    GridSearchCV is a meta-estimator that performs cross-validated grid-search over a parameter grid.
+    GridSearchCV implements a “fit” and a “score” method. It also implements “score_samples”, “predict”,
+    “predict_proba”, “decision_function”, “transform” and “inverse_transform” if they are implemented in the
+    estimator used. The parameters of the estimator used to apply these methods are optimized by cross-validated
+    grid-search over a parameter grid.
+    :param x_numeric_df: The training data to be used for PCA
+    :param y_data_labels: The labels for the training data
+    :param cross_validation_folds: The number of folds to use for cross-validation
+    :param cpu_cores: The number of CPU cores to use for parallel processing
+    :return: a tuple containing the GridSearchCV object, a boolean indicating whether the data is imbalanced,
+    and a list containing the training data, labels, and the best estimator from the GridSearchCV object
+    """
+    vector_dict = dict()
+    # The parameters are numbers that tells the model what to do with the features, while
+    # hyperparameters tell the model how to choose parameters.
+
+    pca_n_components = get_range_PCA_components(x_numeric_df)
+    svc_Cs = get_range_svc_C()
+    svc_kernels = get_range_svc_kernel()
+    # create a range of 1 to 200  in steps of 10
+    gammas = [ 'scale', 'auto']
+    gammas.extend([1, 0.1, 0.01, 0.001, 0.0001])
+    # check for imbalance in the data
+    is_imbalance_detected = detect_imbalanced_labels(y_data_labels)
+    assign_x_y_pipe_to_dict(vector_dict, f'logit_model model using {x_numeric_df.columns} including PCA',
+                            x_numeric_df, y_data_labels,
+                            get_svc_model(is_imbalance_detected, class_data=y_data_labels),
+                            with_pca_components=PCA())
+    hyper_parameter_test_pipe = vector_dict[f'logit_model model using {x_numeric_df.columns} including PCA'][2]
+    hyper_parameter_ranges = dict()
+    for key, val in hyper_parameter_test_pipe.steps:
+        # standardscaler StandardScaler()
+        # pca PCA()
+        if key == 'pca':
+            hyper_parameter_ranges[f"{key}__n_components"] = pca_n_components
+        # onevsrestclassifier OneVsRestClassifier(estimator=SVC())
+        if key == 'onevsrestclassifier':
+            hyper_parameter_ranges[f"{key}__estimator__C"] = svc_Cs
+            hyper_parameter_ranges[f"{key}__estimator__kernel"] = svc_kernels
+            hyper_parameter_ranges[f"{key}__estimator__gamma"] = gammas
+
+    print("hyper_parameter_ranges: ", hyper_parameter_ranges)
+    # GridSearchCV is a meta-estimator that performs cross-validated grid-search over a parameter grid.
+    # GridSearchCV implements a “fit” and a “score” method. It also implements “score_samples”, “predict”,
+    # “predict_proba”, “decision_function”, “transform” and “inverse_transform”
+    # if they are implemented in the estimator used.
+    # The parameters of the estimator used to apply these methods are optimized by cross-validated grid-search
+    # over a parameter grid.
+    gs_cross_validation = GridSearchCV(hyper_parameter_test_pipe, hyper_parameter_ranges, cv=cross_validation_folds,
+                                       n_jobs=cpu_cores)
+    gs_cross_validation.fit(x_numeric_df, y_data_labels)
+    return gs_cross_validation, is_imbalance_detected, [x_numeric_df, y_data_labels,
+                                                        gs_cross_validation.best_estimator_]
 
 
 # python main entry
@@ -657,7 +785,7 @@ if __name__ == '__main__':
     Y_Data_sparse_one_hot_encoded = convert_to_sparse_pandas(Y_Data, [])
     Y_Data_csr = sparse.load_npz('adult_Y_sparse_one_hot_encoded.npz')
     print('Y Data takes up', get_memory_usage_of_data_frame(Y_Data))
-    print('Y sparse Data takes up', get_memory_usage_of_data_frame(Y_Data_sparse_one_hot_encoded))
+    print('Y sparse. Data takes up', get_memory_usage_of_data_frame(Y_Data_sparse_one_hot_encoded))
     print('Y csr Data takes up', get_csr_memory_usage(Y_Data_csr))
 
     # check for Y_Data imbalance
@@ -665,19 +793,35 @@ if __name__ == '__main__':
     print("Y_Data sparse one hot encoded value counts:\n", Y_Data_sparse_one_hot_encoded.value_counts())
     print("Y_Data csr value counts:\n", pd.Series(Y_Data_csr.toarray().ravel()).value_counts())
 
-    imbalance_detected = detect_imbalanced_labels(Y_Data)
-
-    # Get Logistic Regression model
-    logit_model = get_logistic_regression_model(imbalance_detected, class_data=Y_Data, max_iterations=200)
+    numeric_df = get_numeric_data_with_labels(X_Data_one_hot_encoded, Y_Data)
 
     vector_dict = dict()
-    top_range = 56
 
-    numeric_df = get_numeric_data_with_labels(X_Data_one_hot_encoded, Y_Data)
+    gs_cross_validation_inst, imbalance_detected, best_x_y_pipe = (
+        find_pipe_with_best_hyper_parameters_grid_search_cross_validation(
+        numeric_df, Y_Data, cross_validation_folds=5, cpu_cores=6))
+
+    print("Best parameters: ", gs_cross_validation_inst.best_params_)
+    print("Best score: ", gs_cross_validation_inst.best_score_)
+    print("Best estimator: ", gs_cross_validation_inst.best_estimator_)
+    print("Best index: ", gs_cross_validation_inst.best_index_)
+    vector_dict[f'Best estimator {gs_cross_validation_inst.best_estimator_}'] = best_x_y_pipe
+
+    # Get Logistic Regression model with more iterations as opposed to default 100
+    logit_model = get_svc_model(imbalance_detected, class_data=Y_Data,
+                                max_iterations=gs_cross_validation_inst.best_params_[
+                                                    'onevsrestclassifier__estimator__max_iter'],
+                                inverse_of_regularization_strength=
+                                                gs_cross_validation_inst.best_params_[
+                                                    'onevsrestclassifier__estimator__C'],
+                                penalty=gs_cross_validation_inst.best_params_[
+                                                    'onevsrestclassifier__estimator__penalty'])
+
+    top_range = 56
     spec_column, score_column = select_k_best_features(numeric_df, top_range).values.T  # transpose the values
 
-    assign_x_y_model_list_to_dict(vector_dict, f'Pandas onehot top {top_range} {spec_column}',
-                                  X_Data_one_hot_encoded[spec_column], Y_Data, logit_model)
+    assign_x_y_pipe_to_dict(vector_dict, f'Pandas onehot top {top_range} {spec_column}',
+                            X_Data_one_hot_encoded[spec_column], Y_Data, logit_model)
 
     # Select the important features and check if the k best features detected are all in the important features
     important_features = select_feature_importance(numeric_df, top_range)
@@ -687,40 +831,18 @@ if __name__ == '__main__':
         print("Excluded Features : ", set(spec_column) - set(important_features.index.values))
         important_columns = list(important_features.index.values)
 
-        assign_x_y_model_list_to_dict(vector_dict,
-                                      f'Important features {len(important_columns)} {important_columns}',
-                                      X_Data_one_hot_encoded[important_columns], Y_Data, logit_model)
+        assign_x_y_pipe_to_dict(vector_dict,
+                                f'Important features {len(important_columns)} {important_columns}',
+                                X_Data_one_hot_encoded[important_columns], Y_Data, logit_model)
 
     for key, item in vector_dict.items():
         print("\n===============  ", key, " ================\n")
         X_train, X_test, y_train, y_test = train_test_split(item[0], item[1], test_size=0.3, random_state=42)
-        model = item[2]
+        y_train = return_flattened_data(y_train)
         y_test = return_flattened_data(y_test)
-        # Standardize features by removing the mean and scaling to unit variance
-        # Cannot center sparse matrices: pass `with_mean=False` instead.
-        # feature_names_in_ (ndarray having shape as (n_features_in_,)):-
-        # This attribute is the features identified by names during fitting.
-        # X is only defined when all of its feature names are of datatype string.
-        scaler = StandardScaler(with_mean=False)
-        imputer = item[3]
-        if imputer is None:
-            pipe = make_pipeline(scaler, model)
-        else:
-            pipe = make_pipeline(imputer, scaler, model)
-
-        # .ravel() is used to convert the array into a contiguous flattened array (1D array)
-        if key == 'Scipy sparse matrix':
-            # .toarray() is used to convert the sparse matrix to dense matrix. Dense matrix is a matrix where most of the
-            # elements are non-zero. It is the opposite of a sparse matrix, where most of the elements are zero.
-            y = y_train.toarray().ravel()
-            pipe.fit(X_train, y)
-        elif key == 'Sparse pandas dataframe':
-            pipe.fit(X_train.values, y_train.values.ravel())
-        else:
-            pipe.fit(X_train.values, y_train.values.ravel())
-
+        pipe = item[2]
+        pipe.fit(X_train, y_train)
         y_pred, y_score = get_prediction_score(X_test, y_test, pipe)
-
         if not imbalance_detected:
             imbalanced_data(y_test, y_pred, y_score)
         else:
@@ -728,6 +850,7 @@ if __name__ == '__main__':
 
         # plot hinge loss
         from sklearn.metrics import hinge_loss
+
         hinge_loss_value = hinge_loss(y_test, y_pred)
         print("Hinge loss: ", hinge_loss_value)
         print("Hinge loss is a loss function used in binary classification tasks. "
