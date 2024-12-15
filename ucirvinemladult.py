@@ -663,10 +663,19 @@ def assign_x_y_pipe_to_dict(model_map, model_key, x_data, y_data, model_predicto
 def get_range_svc_C(ten_to_minimum_exponent=-4, ten_to_max_exponent=4, num_values=5):
     """
     This function generates a range of values for the regularization strength parameter 'C' in Logistic Regression.
+
+    The C parameter tells the SVM optimization how much you want to avoid misclassifying each training example.
+
+    For large values of C, the optimization will choose a smaller-margin hyperplane if that hyperplane does a better job
+    of getting all the training points classified correctly.
     A high value of C (e.g. C=1.0) "Trust this training data a lot" tells the model to give high weight to the
     training data, and
+
     a low value (e.g. C=0.01) tells the model to give more weight to this complexity penalty preventing
-    overfitting to the training data.
+    overfitting to the training data. ery small value of C will cause the optimizer to look for a larger-margin
+    separating hyperplane, even if that hyperplane misclassifies more points. For very tiny values of C, you should get
+    misclassified examples, often even if your training data is linearly separable.
+
     "This data may not be fully representative of the real world data, so if it's telling you to
     make a parameter really large, don't listen to it".
     C: float, default=1.0 Inverse of regularization strength; must be a positive float.
@@ -728,11 +737,16 @@ def find_pipe_with_best_hyper_parameters_grid_search_cross_validation(x_numeric_
     # hyperparameters tell the model how to choose parameters.
 
     pca_n_components = get_range_PCA_components(x_numeric_df)
+    pca_n_components = [83]
+
     svc_Cs = get_range_svc_C()
     svc_kernels = get_range_svc_kernel()
+    svc_kernels = ['linear']
+
     # create a range of 1 to 200  in steps of 10
     gammas = [ 'scale', 'auto']
     gammas.extend([1, 0.1, 0.01, 0.001, 0.0001])
+    gammas = ['scale']
     # check for imbalance in the data
     is_imbalance_detected = detect_imbalanced_labels(y_data_labels)
     assign_x_y_pipe_to_dict(vector_dict, f'logit_model model using {x_numeric_df.columns} including PCA',
@@ -751,7 +765,6 @@ def find_pipe_with_best_hyper_parameters_grid_search_cross_validation(x_numeric_
             hyper_parameter_ranges[f"{key}__estimator__C"] = svc_Cs
             hyper_parameter_ranges[f"{key}__estimator__kernel"] = svc_kernels
             hyper_parameter_ranges[f"{key}__estimator__gamma"] = gammas
-
     print("hyper_parameter_ranges: ", hyper_parameter_ranges)
     # GridSearchCV is a meta-estimator that performs cross-validated grid-search over a parameter grid.
     # GridSearchCV implements a “fit” and a “score” method. It also implements “score_samples”, “predict”,
@@ -762,8 +775,7 @@ def find_pipe_with_best_hyper_parameters_grid_search_cross_validation(x_numeric_
     gs_cross_validation = GridSearchCV(hyper_parameter_test_pipe, hyper_parameter_ranges, cv=cross_validation_folds,
                                        n_jobs=cpu_cores)
     gs_cross_validation.fit(x_numeric_df, y_data_labels)
-    return gs_cross_validation, is_imbalance_detected, [x_numeric_df, y_data_labels,
-                                                        gs_cross_validation.best_estimator_]
+    return gs_cross_validation, is_imbalance_detected, [x_numeric_df, y_data_labels, gs_cross_validation.best_estimator_]
 
 
 # python main entry
@@ -797,9 +809,8 @@ if __name__ == '__main__':
 
     vector_dict = dict()
 
-    gs_cross_validation_inst, imbalance_detected, best_x_y_pipe = (
-        find_pipe_with_best_hyper_parameters_grid_search_cross_validation(
-        numeric_df, Y_Data, cross_validation_folds=5, cpu_cores=6))
+    gs_cross_validation_inst, imbalance_detected, best_x_y_pipe = find_pipe_with_best_hyper_parameters_grid_search_cross_validation(
+        numeric_df, Y_Data, cross_validation_folds=5, cpu_cores=6)
 
     print("Best parameters: ", gs_cross_validation_inst.best_params_)
     print("Best score: ", gs_cross_validation_inst.best_score_)
@@ -807,15 +818,14 @@ if __name__ == '__main__':
     print("Best index: ", gs_cross_validation_inst.best_index_)
     vector_dict[f'Best estimator {gs_cross_validation_inst.best_estimator_}'] = best_x_y_pipe
 
+    # imbalanced, class_data, inverse_of_regularization_strength=1.0,kernel_type='rbf', gamma='scale'
     # Get Logistic Regression model with more iterations as opposed to default 100
     logit_model = get_svc_model(imbalance_detected, class_data=Y_Data,
-                                max_iterations=gs_cross_validation_inst.best_params_[
-                                                    'onevsrestclassifier__estimator__max_iter'],
-                                inverse_of_regularization_strength=
-                                                gs_cross_validation_inst.best_params_[
-                                                    'onevsrestclassifier__estimator__C'],
-                                penalty=gs_cross_validation_inst.best_params_[
-                                                    'onevsrestclassifier__estimator__penalty'])
+                                inverse_of_regularization_strength=gs_cross_validation_inst.best_params_[
+                                    'onevsrestclassifier__estimator__C'],
+                                kernel_type=gs_cross_validation_inst.best_params_[
+                                    'onevsrestclassifier__estimator__kernel'],
+                                gamma=gs_cross_validation_inst.best_params_[ 'onevsrestclassifier__estimator__gamma'])
 
     top_range = 56
     spec_column, score_column = select_k_best_features(numeric_df, top_range).values.T  # transpose the values
